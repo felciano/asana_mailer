@@ -1,43 +1,32 @@
 {% extends "Project.html" %}
 {% block css_block %}
     <style type="text/css">
-/*
-      @import url(//fonts.googleapis.com/css?family=Open+Sans);
-*/        
-      body, h1, h2, h4, .task-name, .task-name-completed {
-        font-family: "proxima-nova", "Helvetica Neue", "Arial", "Open Sans", sans-serif;
-      }
-      body {
-          font-size: 12px;
+      h1, h2, h4, .task-name, .task-name-completed {
+        font-family: "Lucida Grande", sans-serif;
       }
       a {
         color: #0776A0;
         text-decoration: none;
       }
       body > ul > li {
-        font-family: "proxima-nova", "Helvetica Neue", "Arial", "sans-serif";
+        padding: 0.25em;
       }
       li {
-        padding: 0.3em;
         width: 80em;
       }
       .comment, .description, .due-date,
       .task-attribute, .task-tags, .user {
-        font-family: "proxima-nova", "Helvetica Neue", "Arial", "Open Sans", sans-serif;
-      }
-      .task-attribute {
-        color: #b5b5b5;
+        font-family: "Georgia", serif;
       }
       .comment {
         font-style: italic;
       }
       .description {
-         font-style: italic;
-/*
-          white-space: pre-wrap;
-*/
+        font-weight: bold;
+        white-space: pre-wrap;
+        word-wrap: break-word;
       }
-      .important-due-date {
+      .due-date {
         color: #FFA039;
         font-weight: bold;
       }
