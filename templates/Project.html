@@ -13,6 +13,9 @@
     {% if project.description %}
     <span class="task-attribute">Description: </span>{{ project.description }}
     {% endif %}
+    {% if project.current_status_modified_at %}
+    <span class="task-attribute">Status {{ project.current_status_color }}: </span>{{ project.current_status_html }} ({{ project.current_status_modified_at }} by {{project.current_status_author}})
+    {% endif %}
   {% block pre_block %}
   {% endblock %}
   {% block tasks_block %}

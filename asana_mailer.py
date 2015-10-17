@@ -121,6 +121,7 @@ class Project(object):
         self.name = name
         self.description = description
         self.sections = sections
+        self.current_status = None
         if self.sections is None:
             self.sections = []
 
@@ -185,6 +186,8 @@ class Project(object):
 
         project = Project(
             project_id, project_json[u'name'], project_json[u'notes'])
+        log.info('Adding project status')
+        project.set_current_status(project_json[u'current_status'])
         log.info('Separating Tasks into Sections')
         project.add_sections(
             Section.create_sections(project_tasks_json, task_comments))
@@ -211,6 +214,17 @@ class Project(object):
         self.sections.extend(
             (section for section in sections if isinstance(section, Section)))
 
+    def set_current_status(self, current_status_json):
+        '''Add a status for the project.
+
+        :param current_status_json: A set of various Asana status settings
+        '''
+        self.current_status_author = current_status_json[u"author"][u"name"]
+        self.current_status_color = current_status_json[u"color"]
+        self.current_status_text = current_status_json[u"text"]
+        self.current_status_html = current_status_json[u"html_text"]
+        self.current_status_modified_at = current_status_json[u"modified_at"]
+        
     def filter_tasks(
             self, current_time_utc, section_filters=None, task_filters=None):
         '''Filter out tasks based on filters based on filter criteria.
