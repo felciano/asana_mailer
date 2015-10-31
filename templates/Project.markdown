@@ -1,10 +1,11 @@
-# {{ project.name }} Daily Actions {{ current_date }}
+# Daily Actions {{ current_date }}
+{% for project in projects %}
 {% if project.description %}
 #### {{ project.description }}
 {% endif %}
 {% block pre_block %}
 {% endblock %}
-{% block tasks_block %}
+{% block tasks_block scoped %}
 {% for section in project.sections %}
 ## {{ section.name }}
 {% for task in section.tasks %}
@@ -26,3 +27,4 @@
 {% endblock %}
 {% block post_block %}
 {% endblock %}
+{% endfor %}
