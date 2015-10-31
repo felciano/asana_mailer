@@ -198,10 +198,10 @@ class Project(object):
         for section in project.sections:
             for task in section.tasks:
                 subtask_comments = {}
-                current_task_subtasks_json = asana.get('task_subtasks', {'task_id': task.id})
+                current_task_subtasks_json = asana.get('task_subtasks', {'task_id': task.id}, expand='.',)
                 for subtask in current_task_subtasks_json:
                     subtask_id = unicode(subtask[u'id'])
-                    subtask_stories = asana.get('task_stories', {'task_id': task_id})
+                    subtask_stories = asana.get('task_stories', {'task_id': task_id}, expand='.',)
                     current_subtask_comments = [
                         story for story in subtask_stories if
                         story[u'type'] == u'comment']
