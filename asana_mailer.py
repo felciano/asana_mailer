@@ -29,7 +29,7 @@ import datetime
 import json
 import logging
 import smtplib
-
+import string
 import dateutil.parser
 import dateutil.tz
 import premailer
@@ -219,11 +219,18 @@ class Project(object):
 
         :param current_status_json: A set of various Asana status settings
         '''
-        self.current_status_author = current_status_json[u"author"][u"name"]
-        self.current_status_color = current_status_json[u"color"]
-        self.current_status_text = current_status_json[u"text"]
-        self.current_status_html = current_status_json[u"html_text"]
-        self.current_status_modified_at = current_status_json[u"modified_at"]
+        if current_status_json:
+            self.current_status_author = current_status_json[u"author"][u"name"]
+            self.current_status_color = current_status_json[u"color"]
+            self.current_status_text = current_status_json[u"text"]
+            self.current_status_html = current_status_json[u"html_text"]
+            self.current_status_modified_at = current_status_json[u"modified_at"]
+        else:
+            self.current_status_author = None
+            self.current_status_color = None
+            self.current_status_text = None
+            self.current_status_html = None
+            self.current_status_modified_at = None
         
     def filter_tasks(
             self, current_time_utc, section_filters=None, task_filters=None):
@@ -385,7 +392,7 @@ def as_date(datetime_str):
 
 
 def generate_templates(
-        project, html_template, text_template, current_date, current_time_utc, skip_inline_css=False):
+        projects, html_template, text_template, current_date, current_time_utc, skip_inline_css=False):
     '''Generates the templates using Jinja2 templates
 
     :param html_template: The filename of the HTML template in the templates
@@ -407,29 +414,29 @@ def generate_templates(
     html = env.get_template(html_template)
     if skip_inline_css:
         rendered_html = html.render(
-            project=project, current_date=current_date,
+            projects=projects, current_date=current_date,
             current_time_utc=current_time_utc)
     else:
         rendered_html = premailer.transform(html.render(
-            project=project, current_date=current_date,
+            projects=projects, current_date=current_date,
             current_time_utc=current_time_utc))
 
     log.info('Rendering Text Template')
     env.autoescape = False
     plaintext = env.get_template(text_template)
     rendered_plaintext = plaintext.render(
-        project=project, current_date=current_date,
+        projects=projects, current_date=current_date,
         current_time_utc=current_time_utc)
 
     return (rendered_html, rendered_plaintext)
 
 
 def send_email(
-        project, mail_server, from_address, to_addresses, cc_addresses,
+        projects, mail_server, from_address, to_addresses, cc_addresses,
         rendered_html, rendered_text, current_date, smtp_username=None, smtp_password=None, smtp_port=None):
     '''Sends an email using a Project and rendered templates.
 
-    :param project: The Project instance for this email
+    :param projects: The list of Project instances for this email
     :param mail_server: The hostname of the SMTP server to send mail from
     :param from_address: The From: Address for the email to send
     :param to_addresses: The list of To: addresses for the email to be sent to
@@ -452,7 +459,7 @@ def send_email(
         from_address, to_address_str, cc_address_str))
     message = MIMEMultipart('alternative')
     message['Subject'] = '{0} Daily Mailer {1}'.format(
-        project.name, current_date)
+        projects[0].name, current_date)
     message['From'] = from_address
     message['To'] = to_address_str
     if cc_addresses:
@@ -581,12 +588,16 @@ def main():
         (unicode(section + ':') for section in args.section_filters))
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     current_date = str(datetime.date.today())
-    project = Project.create_project(
-        asana, args.project_id, current_time_utc, task_filters=filters,
-        section_filters=section_filters,
-        completed_lookback_hours=args.completed_lookback_hours)
+    projects = []
+    for project_id in string.split(args.project_id, ","):
+        print "id: [%s]" % (project_id)
+        project = Project.create_project(
+            asana, string.strip(project_id), current_time_utc, task_filters=filters,
+            section_filters=section_filters,
+            completed_lookback_hours=args.completed_lookback_hours)
+        projects.append(project)
     rendered_html, rendered_text = generate_templates(
-        project, args.html_template, args.text_template, current_date,
+        projects, args.html_template, args.text_template, current_date,
         current_time_utc, args.skip_inline_css)
 
     if args.to_addresses and args.from_address:
@@ -595,7 +606,7 @@ def main():
         else:
             cc_addresses = None
         send_email(
-            project, args.mail_server, args.from_address, args.to_addresses[:],
+            projects, args.mail_server, args.from_address, args.to_addresses[:],
             cc_addresses, rendered_html, rendered_text, current_date, args.username, args.password)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
