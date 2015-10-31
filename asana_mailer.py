@@ -71,6 +71,7 @@ class AsanaAPI(object):
     project_endpoint = 'projects/{project_id}'
     project_tasks_endpoint = 'projects/{project_id}/tasks'
     task_stories_endpoint = 'tasks/{task_id}/stories'
+    task_subtasks_endpoint = 'tasks/{task_id}/subtasks'
 
     def __init__(self, api_key):
         self.api_key = api_key
@@ -161,6 +162,7 @@ class Project(object):
         project_tasks_json = asana.get(
             'project_tasks', {'project_id': project_id}, expand='.',
             params=tasks_params)
+            
         task_comments = {}
 
         current_section = None
@@ -192,7 +194,24 @@ class Project(object):
         project.filter_tasks(
             current_time_utc, section_filters=section_filters,
             task_filters=task_filters)
-
+        log.info('Starting adding task subtasks')
+        for section in project.sections:
+            for task in section.tasks:
+                subtask_comments = {}
+                current_task_subtasks_json = asana.get('task_subtasks', {'task_id': task.id})
+                for subtask in current_task_subtasks_json:
+                    subtask_id = unicode(subtask[u'id'])
+                    subtask_stories = asana.get('task_stories', {'task_id': task_id})
+                    current_subtask_comments = [
+                        story for story in subtask_stories if
+                        story[u'type'] == u'comment']
+                    if current_subtask_comments:
+                        subtask_comments[subtask_id] = current_subtask_comments                
+                if current_task_subtasks_json:
+                    subtasks_in_sections = Section.create_sections(current_task_subtasks_json, {})
+                    task.add_sections(subtasks_in_sections)
+                    
+              
         return project
 
     def add_section(self, section):
@@ -266,23 +285,29 @@ class Section(object):
                 current_section = Section(task[u'name'])
             else:
                 name = task[u'name']
-                if task[u'assignee']:
+                if (u'assignee' in task) and (task[u'assignee']):
                     assignee = task[u'assignee'][u'name']
                 else:
                     assignee = None
                 task_id = unicode(task[u'id'])
-                completed = task[u'completed']
+                if (u'competed' in task):
+                    completed = task[u'completed']
+                else:
+                    completed = False
                 if completed:
                     completion_time = dateutil.parser.parse(
                         task[u'completed_at'])
                 else:
                     completion_time = None
-                description = task[u'notes'] if task[u'notes'] else None
-                due_date = task[u'due_on']
-                tags = [tag[u'name'] for tag in task[u'tags']]
+                description = task[u'notes'] if ((u'notes' in task) and task[u'notes']) else None
+                due_date = task[u'due_on'] if ((u'due_on' in task) and task[u'due_on']) else None
+                if (u'tags' in task and task[u'tags']):
+                    tags = [tag[u'name'] for tag in task[u'tags']]
+                else:
+                    tags = None
                 current_task_comments = task_comments.get(task_id)
                 current_task = Task(
-                    name, assignee, completed, completion_time, description,
+                    task_id, name, assignee, completed, completion_time, description,
                     due_date, tags, current_task_comments)
                 current_section.add_task(current_task)
         if current_section.tasks:
@@ -312,8 +337,9 @@ class Task(object):
     '''A class representing an Asana Task.'''
 
     def __init__(
-            self, name, assignee, completed, completion_time, description,
+            self, task_id, name, assignee, completed, completion_time, description,
             due_date, tags, comments):
+        self.id = task_id
         self.name = name
         self.assignee = assignee
         self.completed = completed
@@ -322,11 +348,21 @@ class Task(object):
         self.due_date = due_date
         self.tags = tags
         self.comments = comments
+        self.sections = []
 
     def tags_in(self, tag_filter_set):
         '''Determines if a Tasks's tags are within a set of tag filters'''
         task_tag_set = frozenset(self.tags)
         return task_tag_set >= tag_filter_set
+
+    def add_sections(self, sections):
+        '''Add multiple sections to the task.
+
+        :param sections: A list of sections to add to the task
+        '''
+        self.sections.extend(
+            (section for section in sections if isinstance(section, Section)))
+
 
 
 # Filters
