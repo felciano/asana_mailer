@@ -179,10 +179,12 @@ class Project(object):
             task_id = unicode(task[u'id'])
             log.info('Getting task comments for task: {0}'.format(task_id))
             task_stories = asana.get('task_stories', {'task_id': task_id})
+            #print task_stories
             current_task_comments = [
                 story for story in task_stories if
                 story[u'type'] == u'comment']
             if current_task_comments:
+                print "Task comments: {0}".format(current_task_comments)
                 task_comments[task_id] = current_task_comments
 
         project = Project(
@@ -201,11 +203,13 @@ class Project(object):
                 current_task_subtasks_json = asana.get('task_subtasks', {'task_id': task.id}, expand='.',)
                 for subtask in current_task_subtasks_json:
                     subtask_id = unicode(subtask[u'id'])
-                    subtask_stories = asana.get('task_stories', {'task_id': task_id}, expand='.',)
+                    subtask_stories = asana.get('task_stories', {'task_id': subtask_id}, expand='.',)
+                    #print subtask_stories
                     current_subtask_comments = [
                         story for story in subtask_stories if
                         story[u'type'] == u'comment']
                     if current_subtask_comments:
+                        print "Subtask comments: {0}".format(current_subtask_comments)
                         subtask_comments[subtask_id] = current_subtask_comments                
                 if current_task_subtasks_json:
                     subtasks_in_sections = Section.create_sections(current_task_subtasks_json, {})
@@ -356,9 +360,9 @@ class Task(object):
         return task_tag_set >= tag_filter_set
 
     def add_sections(self, sections):
-        '''Add multiple sections to the task.
+        '''Add subtasks in multiple sections to the task.
 
-        :param sections: A list of sections to add to the task
+        :param sections: A list of sections with subtasks to add to the task
         '''
         self.sections.extend(
             (section for section in sections if isinstance(section, Section)))
