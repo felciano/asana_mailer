@@ -48,9 +48,9 @@
 -->
           {% endif %}
         </ul>
-        {% if task.sections %}
-          {{ outer_loop(task.sections) }}
         {% endif %}
+      {% if task.sections %}
+        {{ outer_loop(task.sections) }}
       {% endif %}
     {% endfor %}
     </ul>
