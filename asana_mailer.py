@@ -504,7 +504,7 @@ def as_date(datetime_str):
 
 
 def generate_templates(
-        project, html_template, text_template, current_date, current_time_utc, skip_inline_css=False, templates_dir="templates"):
+        projects, html_template, text_template, current_date, current_time_utc, skip_inline_css=False, templates_dir="templates"):
     '''Generates the templates using Jinja2 templates
 
     :param html_template: The filename of the HTML template in the templates
@@ -712,7 +712,7 @@ def main():
             completed_lookback_hours=args.completed_lookback_hours)
         projects.append(project)
     rendered_html, rendered_text = generate_templates(
-        project, args.html_template, args.text_template, current_date,
+        projects, args.html_template, args.text_template, current_date,
         current_time_utc, args.skip_inline_css, args.templates_dir)
 
     if args.to_addresses and args.from_address:
