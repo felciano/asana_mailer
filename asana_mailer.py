@@ -179,19 +179,6 @@ class TaskContainer(object):
                 story[u'type'] == u'comment']
             if current_task_comments:
                 task_comments[task_id] = current_task_comments
-<<<<<<< HEAD
-
-        project = Project(
-            project_id, project_json[u'name'], project_json[u'notes'])
-        log.info('Adding project status')
-        project.set_current_status(project_json[u'current_status'])
-        log.info('Separating Tasks into Sections')
-        project.add_sections(
-            Section.create_sections(project_tasks_json, task_comments))
-        log.info('Starting task filtering')
-        project.filter_tasks(
-            current_time_utc, section_filters=section_filters,
-=======
         return (tasks_json, task_comments)
 
     def populate_tasks_from_json(self,
@@ -206,7 +193,6 @@ class TaskContainer(object):
             subtasks_in_sections = Section.create_sections(task_json, subtask_comments)
             self.add_sections(subtasks_in_sections)
         self.filter_tasks(current_time_utc, section_filters=section_filters,
->>>>>>> subtasks
             task_filters=task_filters)
         if include_subtasks:
             self.populate_subtasks(asana, current_time_utc, task_filters, section_filters, completed_lookback_hours, include_subtasks)
