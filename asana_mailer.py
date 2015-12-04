@@ -302,6 +302,7 @@ class Project(TaskContainer):
         else:
             completed_since = 'now'
         tasks_params['completed_since'] = completed_since
+        tasks_params['opt_fields'] = "name,notes,html_notes,id,assignee,assignee.name,due_on,due_at,followers,projects,parent,tags"
 
         tasks_json = asana.get(
             'project_tasks', {'project_id': self.id}, expand='.',
@@ -384,7 +385,7 @@ class Section(object):
                         task[u'completed_at'])
                 else:
                     completion_time = None
-                description = task[u'notes'] if ((u'notes' in task) and task[u'notes']) else None
+                description = task[u'html_notes'] if ((u'html_notes' in task) and task[u'html_notes']) else task[u'notes'] if ((u'notes' in task) and task[u'notes']) else None
                 due_date = task[u'due_on'] if ((u'due_on' in task) and task[u'due_on']) else None
                 if (u'tags' in task and task[u'tags']):
                     tags = [tag[u'name'] for tag in task[u'tags']]

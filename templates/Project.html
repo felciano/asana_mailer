@@ -49,7 +49,7 @@
                 {% endblock %}
                 {% if task.description %}
                 <li>
-                    <span class="description"><span class="task-attribute">Description: </span>{{ task.description }}</span>
+                    <span class="description"><span class="task-attribute">Description: </span>{{ task.description|safe }}</span>
                 </li>
       <!--
                     <p class="description">{{ task.description }}</p>
