@@ -23,8 +23,14 @@
     {% endif %}
   {% block pre_block %}
   {% endblock %}
+<<<<<<< HEAD
   {% block tasks_block scoped %}
   {% for section in project.sections %}
+=======
+  {% block tasks_block %}
+  {% for section in project.sections recursive %}
+    {% set outer_loop = loop %} 
+>>>>>>> subtasks
     {% if section.name != "Misc:" %}
     <h2>{{ section.name }}</h2>
     {% endif %}
@@ -48,7 +54,6 @@
           {% endblock %}
           {% if task.description %}
           <li>
-            
               <span class="description"><span class="task-attribute">Description: </span>{{ task.description }}</span>
           </li>
 <!--
@@ -56,6 +61,9 @@
 -->
           {% endif %}
         </ul>
+        {% endif %}
+      {% if task.sections %}
+        {{ outer_loop(task.sections) }}
       {% endif %}
     {% endfor %}
     </ul>
