@@ -1,32 +1,43 @@
 {% extends "Project.html" %}
 {% block css_block %}
     <style type="text/css">
-      h1, h2, h4, .task-name, .task-name-completed {
-        font-family: "Lucida Grande", sans-serif;
+/*
+      @import url(//fonts.googleapis.com/css?family=Open+Sans);
+*/        
+      body, h1, h2, h4, .task-name, .task-name-completed {
+        font-family: "proxima-nova", "Helvetica Neue", "Arial", "Open Sans", sans-serif;
+      }
+      body {
+          font-size: 12px;
       }
       a {
         color: #0776A0;
         text-decoration: none;
       }
       body > ul > li {
-        padding: 0.25em;
+        font-family: "proxima-nova", "Helvetica Neue", "Arial", "sans-serif";
       }
       li {
+        padding: 0.3em;
         width: 80em;
       }
       .comment, .description, .due-date,
       .task-attribute, .task-tags, .user {
-        font-family: "Georgia", serif;
+        font-family: "proxima-nova", "Helvetica Neue", "Arial", "Open Sans", sans-serif;
+      }
+      .task-attribute {
+        color: #b5b5b5;
       }
       .comment {
         font-style: italic;
       }
       .description {
-        font-weight: bold;
-        white-space: pre-wrap;
-        word-wrap: break-word;
+         font-style: italic;
+/*
+          white-space: pre-wrap;
+*/
       }
-      .due-date {
+      .important-due-date {
         color: #FFA039;
         font-weight: bold;
       }
@@ -38,6 +49,21 @@
       }
       .user {
         color: #FFA039;
+      }
+      
+      .green {
+        color: #00FF00;
+        font-size: 125%
+      }
+
+      .yellow {
+        color: #FFFF00;
+        font-size: 125%
+      }
+
+      .red {
+        color: #FF0000;
+        font-size: 125%
       }
     </style>
 {% endblock %}

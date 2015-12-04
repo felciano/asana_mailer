@@ -29,11 +29,12 @@ import datetime
 import json
 import logging
 import smtplib
-
+import string
 import dateutil.parser
 import dateutil.tz
 import premailer
 import requests
+import abc
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -71,6 +72,7 @@ class AsanaAPI(object):
     project_endpoint = 'projects/{project_id}'
     project_tasks_endpoint = 'projects/{project_id}/tasks'
     task_stories_endpoint = 'tasks/{task_id}/stories'
+    task_subtasks_endpoint = 'tasks/{task_id}/subtasks'
 
     def __init__(self, api_key):
         self.api_key = api_key
@@ -107,11 +109,14 @@ class AsanaAPI(object):
             response.raise_for_status()
 
 
-class Project(object):
-    '''An object that represents an Asana Project and its metadata.
+class TaskContainer(object):
+    '''An object that represents an Asana object that can contain tasks and basic metadata.
 
-    It is intended to be created via its create_project method, which utilizes
-    an Asana object to make calls to Asana's API. It also handles creating
+    It is intended to support Asana Projects and Tasks, both of which can contain one or
+    more tasks organized into sections. It also provides storage for common Asana metadata
+    including id, name and descrition. It is intended to be used via its 
+    populate_from_asana_task_json method, which parses the data return by Asana's API calls
+    that return collections of tasks. It handles creating
     sections and their associated task objects, as well as filtering tasks and
     sections.
     '''
@@ -121,13 +126,24 @@ class Project(object):
         self.name = name
         self.description = description
         self.sections = sections
+        self.current_status = None
         if self.sections is None:
             self.sections = []
 
+    @abc.abstractmethod
+    def get_tasks_json(self, asana, current_time_utc, completed_lookback_hours):
+        '''Retrieve from Asana API the json representation of this object's tasks.
+
+        :param asana: The initialized Asana object that makes API calls
+        :param completed_lookback_hours: An amount in hours to look back for
+            completed tasks
+        '''
+        return
+        
     @staticmethod
-    def create_project(
-            asana, project_id, current_time_utc, task_filters=None,
-            section_filters=None, completed_lookback_hours=None):
+    def parse_tasks_into_sections_and_comments(
+        asana, tasks_json, current_time_utc, task_filters=None,
+        section_filters=None):
         '''Creates a Project utilizing data from Asana.
 
         Using filters, a project attempts to optimize the calls it makes to
@@ -136,36 +152,17 @@ class Project(object):
         perform filtering that is only possible post-parsing.
 
         :param asana: The initialized Asana object that makes API calls
-        :param project_id: The Asana Project ID
+        :param tasks_json: The tasks to parse and import, in Asana's json format
         :param task_filters: A list of tag filters for filtering out tasks
         :param section_filters: A list of sections to filter out tasks
-        :param completed_lookback_hours: An amount in hours to look back for
-        completed tasks
-        :return: The newly created Project instance
+        :return: a (Sections, Comments) tuple where Sections is a list of 
+        sections containing tasks, and Comments is a dictionary indexed by task id
         '''
-        log.info('Creating project object from Asana Project {0}'.format(
-            project_id))
-
-        project_json = asana.get('project', {'project_id': project_id})
-
-        tasks_params = {}
-        if completed_lookback_hours:
-            completed_since = (current_time_utc - datetime.timedelta(
-                hours=completed_lookback_hours)).replace(
-                    microsecond=0).isoformat()
-            log.info(
-                'Retaining tasks completed since {0}'.format(completed_since))
-        else:
-            completed_since = 'now'
-        tasks_params['completed_since'] = completed_since
-        project_tasks_json = asana.get(
-            'project_tasks', {'project_id': project_id}, expand='.',
-            params=tasks_params)
         task_comments = {}
 
         current_section = None
         log.info('Starting API Calls for Task Comments')
-        for task in project_tasks_json:
+        for task in tasks_json:
             if task[u'name'].endswith(':'):
                 current_section = task[u'name']
             # Optimize calls to API
@@ -182,18 +179,37 @@ class Project(object):
                 story[u'type'] == u'comment']
             if current_task_comments:
                 task_comments[task_id] = current_task_comments
+        return (tasks_json, task_comments)
 
-        project = Project(
-            project_id, project_json[u'name'], project_json[u'notes'])
-        log.info('Separating Tasks into Sections')
-        project.add_sections(
-            Section.create_sections(project_tasks_json, task_comments))
-        log.info('Starting task filtering')
-        project.filter_tasks(
-            current_time_utc, section_filters=section_filters,
+    def populate_tasks_from_json(self,
+        asana, task_json, current_time_utc, task_filters=None,
+        section_filters=None, completed_lookback_hours=None, include_subtasks=True):
+            
+        subtask_comments = {}
+#        current_task_subtasks_json = self.get_tasks_json(asana, current_time_utc, completed_lookback_hours)
+        (task_json, subtask_comments) = TaskContainer.parse_tasks_into_sections_and_comments(asana, task_json,
+                current_time_utc, task_filters, section_filters)
+        if task_json:
+            subtasks_in_sections = Section.create_sections(task_json, subtask_comments)
+            self.add_sections(subtasks_in_sections)
+        self.filter_tasks(current_time_utc, section_filters=section_filters,
             task_filters=task_filters)
+        if include_subtasks:
+            self.populate_subtasks(asana, current_time_utc, task_filters, section_filters, completed_lookback_hours, include_subtasks)
 
-        return project
+    def populate_subtasks(self,
+        asana, current_time_utc, task_filters=None,
+        section_filters=None, completed_lookback_hours=None, include_subtasks=True):
+
+        log.info('Starting adding task subtasks')
+        for section in self.sections:
+            for task in section.tasks:
+                current_task_subtasks_json = task.get_tasks_json(asana, current_time_utc, completed_lookback_hours)
+                task.populate_tasks_from_json(asana, current_task_subtasks_json, current_time_utc, task_filters, section_filters, completed_lookback_hours, include_subtasks)
+#                for sec in task.sections:
+#                    for t in sec.tasks:
+#                        print "{0} < {1} < {2}".format(t.name, sec.name, task.name)
+                
 
     def add_section(self, section):
         '''Add a section to the project.
@@ -211,6 +227,24 @@ class Project(object):
         self.sections.extend(
             (section for section in sections if isinstance(section, Section)))
 
+    def set_current_status(self, current_status_json):
+        '''Add a status for the project.
+
+        :param current_status_json: A set of various Asana status settings
+        '''
+        if current_status_json:
+            self.current_status_author = current_status_json[u"author"][u"name"]
+            self.current_status_color = current_status_json[u"color"]
+            self.current_status_text = current_status_json[u"text"]
+            self.current_status_html = current_status_json[u"html_text"]
+            self.current_status_modified_at = current_status_json[u"modified_at"]
+        else:
+            self.current_status_author = None
+            self.current_status_color = None
+            self.current_status_text = None
+            self.current_status_html = None
+            self.current_status_modified_at = None
+        
     def filter_tasks(
             self, current_time_utc, section_filters=None, task_filters=None):
         '''Filter out tasks based on filters based on filter criteria.
@@ -236,6 +270,76 @@ class Project(object):
         # Remove Empty Sections
         log.info('Removing empty sections')
         self.sections[:] = [s for s in self.sections if s.tasks]
+
+
+class Project(TaskContainer):
+    '''An object that represents an Asana Project and its metadata.
+
+    It is intended to be created via its create_project method, which utilizes
+    an Asana object to make calls to Asana's API. It also handles creating
+    sections and their associated task objects, as well as filtering tasks and
+    sections.
+    '''
+
+    def __init__(self, task_id, name, description, sections=None):
+        super(Project, self).__init__(task_id, name, description, sections)
+       # super(Project, self).__init__(id, name, description, sections)
+#        self.id = id
+#        self.name = name
+#        self.description = description
+#        self.sections = sections
+#        if self.sections is None:
+#            self.sections = []
+
+    def get_tasks_json(self, asana, current_time_utc, completed_lookback_hours):
+        tasks_params = {}
+        if completed_lookback_hours:
+            completed_since = (current_time_utc - datetime.timedelta(
+                hours=completed_lookback_hours)).replace(
+                    microsecond=0).isoformat()
+            log.info(
+                'Retaining tasks completed since {0}'.format(completed_since))
+        else:
+            completed_since = 'now'
+        tasks_params['completed_since'] = completed_since
+
+        tasks_json = asana.get(
+            'project_tasks', {'project_id': self.id}, expand='.',
+            params=tasks_params)
+        return tasks_json
+
+    @staticmethod
+    def create_project(
+            asana, project_id, current_time_utc, task_filters=None,
+            section_filters=None, completed_lookback_hours=None, include_subtasks=True):
+        '''Creates a Project utilizing data from Asana.
+
+        Using filters, a project attempts to optimize the calls it makes to
+        Asana's API. After the JSON data has been collected, it is then parsed
+        into Task and Section objects, and then filtered again in order to
+        perform filtering that is only possible post-parsing.
+
+        :param asana: The initialized Asana object that makes API calls
+        :param project_id: The Asana Project ID
+        :param task_filters: A list of tag filters for filtering out tasks
+        :param section_filters: A list of sections to filter out tasks
+        :param completed_lookback_hours: An amount in hours to look back for
+        completed tasks
+        :return: The newly created Project instance
+        '''
+        log.info('Creating project object from Asana Project {0}'.format(
+            project_id))
+
+        project_json = asana.get('project', {'project_id': project_id})
+        project = Project(project_id, project_json[u'name'], project_json[u'notes'])
+
+        # FIXME: this next section could be refactored out since it is essentially
+        # identical to steps in populating task subtasks
+
+        project_tasks_json = project.get_tasks_json(asana, current_time_utc, completed_lookback_hours)
+        project.populate_tasks_from_json(asana, project_tasks_json, current_time_utc, task_filters, section_filters, completed_lookback_hours, include_subtasks) 
+                
+        return project
 
 
 class Section(object):
@@ -266,23 +370,29 @@ class Section(object):
                 current_section = Section(task[u'name'])
             else:
                 name = task[u'name']
-                if task[u'assignee']:
+                if (u'assignee' in task) and (task[u'assignee']):
                     assignee = task[u'assignee'][u'name']
                 else:
                     assignee = None
                 task_id = unicode(task[u'id'])
-                completed = task[u'completed']
+                if (u'competed' in task):
+                    completed = task[u'completed']
+                else:
+                    completed = False
                 if completed:
                     completion_time = dateutil.parser.parse(
                         task[u'completed_at'])
                 else:
                     completion_time = None
-                description = task[u'notes'] if task[u'notes'] else None
-                due_date = task[u'due_on']
-                tags = [tag[u'name'] for tag in task[u'tags']]
+                description = task[u'notes'] if ((u'notes' in task) and task[u'notes']) else None
+                due_date = task[u'due_on'] if ((u'due_on' in task) and task[u'due_on']) else None
+                if (u'tags' in task and task[u'tags']):
+                    tags = [tag[u'name'] for tag in task[u'tags']]
+                else:
+                    tags = None
                 current_task_comments = task_comments.get(task_id)
                 current_task = Task(
-                    name, assignee, completed, completion_time, description,
+                    task_id, name, assignee, completed, completion_time, description,
                     due_date, tags, current_task_comments)
                 current_section.add_task(current_task)
         if current_section.tasks:
@@ -308,25 +418,48 @@ class Section(object):
         self.tasks.extend((task for task in tasks if isinstance(task, Task)))
 
 
-class Task(object):
+class Task(TaskContainer):
     '''A class representing an Asana Task.'''
 
     def __init__(
-            self, name, assignee, completed, completion_time, description,
-            due_date, tags, comments):
-        self.name = name
+            self, task_id, name, assignee, completed, completion_time, description,
+            due_date, tags, comments, sections = None):
+        super(Task, self).__init__(task_id, name, description, sections)
+        self.description = description
         self.assignee = assignee
         self.completed = completed
         self.completion_time = completion_time
-        self.description = description
         self.due_date = due_date
         self.tags = tags
         self.comments = comments
+        if sections:
+            self.sections = sections
+        else:
+            self.sections = []
 
     def tags_in(self, tag_filter_set):
         '''Determines if a Tasks's tags are within a set of tag filters'''
         task_tag_set = frozenset(self.tags)
         return task_tag_set >= tag_filter_set
+
+    def get_tasks_json(self, asana, current_time_utc, completed_lookback_hours):
+ 
+        tasks_params = {}
+        if completed_lookback_hours:
+            print current_time_utc
+            print type(current_time_utc)
+            completed_since = (current_time_utc - datetime.timedelta(
+                hours=completed_lookback_hours)).replace(
+                    microsecond=0).isoformat()
+            log.info(
+                'Retaining tasks completed since {0}'.format(completed_since))
+        else:
+            completed_since = 'now'
+
+        tasks_params['completed_since'] = completed_since
+
+        subtasks_json = asana.get('task_subtasks', {'task_id': self.id}, expand='.', params=tasks_params)
+        return subtasks_json
 
 
 # Filters
@@ -371,7 +504,7 @@ def as_date(datetime_str):
 
 
 def generate_templates(
-        project, html_template, text_template, current_date, current_time_utc, skip_inline_css=False):
+        projects, html_template, text_template, current_date, current_time_utc, skip_inline_css=False, templates_dir="templates"):
     '''Generates the templates using Jinja2 templates
 
     :param html_template: The filename of the HTML template in the templates
@@ -381,7 +514,7 @@ def generate_templates(
     :param current_date: The current date.
     '''
     env = Environment(
-        loader=FileSystemLoader('templates'), trim_blocks=True,
+        loader=FileSystemLoader(templates_dir), trim_blocks=True,
         lstrip_blocks=True, autoescape=True)
 
     env.filters['last_comment'] = last_comment
@@ -393,29 +526,29 @@ def generate_templates(
     html = env.get_template(html_template)
     if skip_inline_css:
         rendered_html = html.render(
-            project=project, current_date=current_date,
+            projects=projects, current_date=current_date,
             current_time_utc=current_time_utc)
     else:
         rendered_html = premailer.transform(html.render(
-            project=project, current_date=current_date,
+            projects=projects, current_date=current_date,
             current_time_utc=current_time_utc))
 
     log.info('Rendering Text Template')
     env.autoescape = False
     plaintext = env.get_template(text_template)
     rendered_plaintext = plaintext.render(
-        project=project, current_date=current_date,
+        projects=projects, current_date=current_date,
         current_time_utc=current_time_utc)
 
     return (rendered_html, rendered_plaintext)
 
 
 def send_email(
-        project, mail_server, from_address, to_addresses, cc_addresses,
-        rendered_html, rendered_text, current_date):
+        projects, mail_server, from_address, to_addresses, cc_addresses,
+        rendered_html, rendered_text, current_date, smtp_username=None, smtp_password=None, smtp_port=None):
     '''Sends an email using a Project and rendered templates.
 
-    :param project: The Project instance for this email
+    :param projects: The list of Project instances for this email
     :param mail_server: The hostname of the SMTP server to send mail from
     :param from_address: The From: Address for the email to send
     :param to_addresses: The list of To: addresses for the email to be sent to
@@ -423,6 +556,9 @@ def send_email(
     :param rendered_html: The rendered HTML template
     :param rendered_text: The rendered text template
     :param current_date: The current date
+    :param smtp_username: The username to authenticate to SMTP server with
+    :param smtp_password: The password to authenticate to SMTP server with
+    :param smtp_port: The port to connect to the SMTP server with
     '''
 
     to_address_str = ', '.join(to_addresses)
@@ -435,7 +571,7 @@ def send_email(
         from_address, to_address_str, cc_address_str))
     message = MIMEMultipart('alternative')
     message['Subject'] = '{0} Daily Mailer {1}'.format(
-        project.name, current_date)
+        projects[0].name, current_date)
     message['From'] = from_address
     message['To'] = to_address_str
     if cc_addresses:
@@ -451,9 +587,18 @@ def send_email(
         to_addresses.extend(cc_addresses)
 
     try:
-        log.info('Connecting to SMTP Server: {0}'.format(mail_server))
-        smtp_conn = smtplib.SMTP(mail_server, timeout=300)
-        log.info('Sending Email')
+        if (smtp_username != None and smtp_password != None):
+            if not smtp_port:
+                smtp_port = 465
+            log.info('Connecting to authenticated SMTP Server: {0}'.format(mail_server))
+            smtp_conn = smtplib.SMTP_SSL(mail_server, port=smtp_port, timeout=300)
+            log.info('Logging in to Email')
+            smtp_conn.ehlo()
+            smtp_conn.login(smtp_username, smtp_password)
+        else:
+            log.info('Connecting to anonymous SMTP Server: {0}'.format(mail_server))
+            smtp_conn = smtplib.SMTP(mail_server, timeout=300)
+            log.info('Sending Email')
         smtp_conn.sendmail(from_address, to_addresses, message.as_string())
         smtp_conn.quit()
     except smtplib.SMTPException:
@@ -503,6 +648,9 @@ def create_cli_parser():
         '-s', '--filter-sections', nargs='+', dest='section_filters',
         default=[], metavar='SECTION', help='sections to filter tasks on')
     parser.add_argument(
+        '--templates-dir', default='templates',
+        help='path to directory with html and plaintext templates')
+    parser.add_argument(
         '--html-template', default='Default.html',
         help='a custom template to use for the html portion')
     parser.add_argument(
@@ -523,6 +671,12 @@ def create_cli_parser():
     email_group.add_argument(
         '--from-address', metavar='ADDRESS',
         help="the 'From:' address for the outgoing email")
+    email_group.add_argument(
+        '--username', metavar='ADDRESS', default=None,
+        help="the username to authenticate to the outgoing (SMTP) mail server over SSL")
+    email_group.add_argument(
+        '--password', metavar='ADDRESS', default=None,
+        help="the password to authenticate to the outgoing (SMTP) mail server over SSL")
 
     return parser
 
@@ -549,13 +703,17 @@ def main():
         (unicode(section + ':') for section in args.section_filters))
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     current_date = str(datetime.date.today())
-    project = Project.create_project(
-        asana, args.project_id, current_time_utc, task_filters=filters,
-        section_filters=section_filters,
-        completed_lookback_hours=args.completed_lookback_hours)
+    projects = []
+    for project_id in string.split(args.project_id, ","):
+        print "id: [%s]" % (project_id)
+        project = Project.create_project(
+            asana, string.strip(project_id), current_time_utc, task_filters=filters,
+            section_filters=section_filters,
+            completed_lookback_hours=args.completed_lookback_hours)
+        projects.append(project)
     rendered_html, rendered_text = generate_templates(
-        project, args.html_template, args.text_template, current_date,
-        current_time_utc, args.skip_inline_css)
+        projects, args.html_template, args.text_template, current_date,
+        current_time_utc, args.skip_inline_css, args.templates_dir)
 
     if args.to_addresses and args.from_address:
         if args.cc_addresses:
@@ -563,8 +721,8 @@ def main():
         else:
             cc_addresses = None
         send_email(
-            project, args.mail_server, args.from_address, args.to_addresses[:],
-            cc_addresses, rendered_html, rendered_text, current_date)
+            projects, args.mail_server, args.from_address, args.to_addresses[:],
+            cc_addresses, rendered_html, rendered_text, current_date, args.username, args.password)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')
